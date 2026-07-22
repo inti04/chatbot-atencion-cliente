@@ -1,0 +1,222 @@
+{
+  "name": "Chatbot Clínica Dental (Telegram + IA + MongoDB)",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "id": "d2fd855a-eff5-4ffb-9a91-2f50c31cd86d",
+      "name": "Recibir mensaje de Telegram",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.3,
+      "position": [240, 304],
+      "webhookId": "e7c0bdc5-4d05-4781-8e19-defd825dd0c6"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const message = $json.message || {};\nconst text = message.text || '';\nconst chatId = message.chat ? message.chat.id : null;\nconst username = (message.from && (message.from.username || message.from.first_name)) || 'desconocido';\n\nreturn {\n  json: {\n    chat_id: chatId,\n    username,\n    message: text,\n  }\n};"
+      },
+      "id": "b4eab4fa-d8d7-4d38-9a52-33b950e2aae1",
+      "name": "Normalizar mensaje",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [464, 304]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "Eres el asistente virtual de una clinica dental y respondes a pacientes por Telegram. Antes de responder cualquier pregunta sobre horarios, precios, servicios o disponibilidad, SIEMPRE usa la herramienta \"Buscar informacion de la clinica\" para consultar la informacion real del negocio. Responde de forma calida, profesional y natural, como lo haria una recepcionista. Nunca inventes precios, horarios ni servicios que no aparezcan en la herramienta. Debes devolver un JSON con dos campos: \"response\" (el mensaje que se le enviara al paciente) y \"resolved\" (true si encontraste informacion suficiente en la herramienta para responder con confianza, false si no tienes informacion suficiente y un humano deberia hacer seguimiento). Si no tienes informacion suficiente, en \"response\" igual da la mejor respuesta posible y avisa amablemente que un miembro del equipo se pondra en contacto."
+        }
+      },
+      "id": "a6d0ce95-87c2-4e91-b5cc-dd1159441489",
+      "name": "Agente Clinica Dental",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [688, 304]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {}
+      },
+      "id": "3eb2e9ef-2642-46cf-8d9b-6a3f3ee57971",
+      "name": "Google Gemini Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [640, 512]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Recibir mensaje de Telegram').item.json.message.chat.id }}",
+        "contextWindowLength": 10
+      },
+      "id": "ed20bdbc-188b-4b86-891f-9c8500712f60",
+      "name": "Memoria de conversacion",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [960, 512]
+    },
+    {
+      "parameters": {
+        "collection": "faqs",
+        "options": {},
+        "query": "{\"active\": true}",
+        "resource": "document",
+        "operation": "find"
+      },
+      "id": "08ee701c-ee4e-4373-9c31-f1fd4cb74dff",
+      "name": "Buscar informacion de la clinica",
+      "type": "n8n-nodes-base.mongoDbTool",
+      "typeVersion": 1.3,
+      "position": [800, 512],
+      "notes": "Devuelve las preguntas frecuentes activas (horarios, precios, servicios, disponibilidad) de la clinica dental. Usar antes de responder cualquier pregunta sobre el negocio."
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{ \"response\": \"Atendemos ortodoncia de lunes a viernes de 9am a 6pm.\", \"resolved\": true }"
+      },
+      "id": "e6731828-a953-40ea-b7a4-50cd489eb398",
+      "name": "Formato de respuesta",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [1120, 512]
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('Normalizar mensaje').first().json;\nconst agentOut = ($input.first().json && $input.first().json.output) || {};\n\nfunction escapeHtml(str) {\n  return String(str || '')\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;');\n}\n\nconst resolved = agentOut.resolved === true;\nconst responseText = escapeHtml(agentOut.response || 'Gracias por tu mensaje. Un miembro del equipo te contactara pronto.');\nconst timestamp = new Date().toISOString();\n\nreturn [{\n  json: {\n    chat_id: src.chat_id,\n    username: escapeHtml(src.username),\n    message: escapeHtml(src.message),\n    resolved,\n    response: responseText,\n    status: resolved ? 'answered' : 'unanswered',\n    timestamp,\n  }\n}];"
+      },
+      "id": "ab09185e-db4a-47f0-8fc5-9ddec77c1b20",
+      "name": "Preparar respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1344, 304]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.response }}",
+        "additionalFields": { "appendAttribution": false, "parse_mode": "HTML" },
+        "resource": "message",
+        "operation": "sendMessage"
+      },
+      "id": "d4ae0c0f-3eb0-4fde-bb5e-173c2f935850",
+      "name": "Responder al cliente",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1568, 224],
+      "webhookId": "fb968a45-12f9-461f-87c4-3b29df39e25c"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1 },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.resolved }}",
+              "operator": { "type": "boolean", "operation": "true" },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c9186f48-76a1-4d5d-8f3d-7001954b382a",
+      "name": "Resuelto?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1568, 400]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "collection": "conversations",
+        "options": {},
+        "resource": "document"
+      },
+      "id": "24856191-7688-4eb8-a5f8-2eeb78724c65",
+      "name": "Guardar conversacion (respondida)",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1.3,
+      "position": [1792, 352]
+    },
+    {
+      "parameters": {
+        "chatId": "8046831706",
+        "text": "=El agente no pudo resolver una pregunta de @{{ $json.username }} (chat id: {{ $json.chat_id }}):\\n\\n{{ $json.message }}\\n\\nRespuesta enviada: {{ $json.response }}",
+        "additionalFields": { "appendAttribution": false, "parse_mode": "HTML" },
+        "resource": "message",
+        "operation": "sendMessage"
+      },
+      "id": "da131bef-0e7d-4e67-ac49-07cd85fb444d",
+      "name": "Notificar al admin",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1792, 464],
+      "webhookId": "d2240bcb-a633-45ad-ad41-ab6473bb250f"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "collection": "conversations",
+        "options": {},
+        "resource": "document"
+      },
+      "id": "b85529fb-c774-452c-80da-1883c281e5bf",
+      "name": "Guardar conversacion (sin responder)",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1.3,
+      "position": [1792, 592]
+    }
+  ],
+  "connections": {
+    "Recibir mensaje de Telegram": {
+      "main": [[{ "node": "Normalizar mensaje", "type": "main", "index": 0 }]]
+    },
+    "Normalizar mensaje": {
+      "main": [[{ "node": "Agente Clinica Dental", "type": "main", "index": 0 }]]
+    },
+    "Agente Clinica Dental": {
+      "main": [[{ "node": "Preparar respuesta", "type": "main", "index": 0 }]]
+    },
+    "Google Gemini Model": {
+      "ai_languageModel": [[{ "node": "Agente Clinica Dental", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Memoria de conversacion": {
+      "ai_memory": [[{ "node": "Agente Clinica Dental", "type": "ai_memory", "index": 0 }]]
+    },
+    "Buscar informacion de la clinica": {
+      "ai_tool": [[{ "node": "Agente Clinica Dental", "type": "ai_tool", "index": 0 }]]
+    },
+    "Formato de respuesta": {
+      "ai_outputParser": [[{ "node": "Agente Clinica Dental", "type": "ai_outputParser", "index": 0 }]]
+    },
+    "Preparar respuesta": {
+      "main": [
+        [
+          { "node": "Responder al cliente", "type": "main", "index": 0 },
+          { "node": "Resuelto?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Resuelto?": {
+      "main": [
+        [{ "node": "Guardar conversacion (respondida)", "type": "main", "index": 0 }],
+        [
+          { "node": "Notificar al admin", "type": "main", "index": 0 },
+          { "node": "Guardar conversacion (sin responder)", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

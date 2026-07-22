@@ -5,11 +5,15 @@ Bot de Telegram construido en n8n que responde automáticamente preguntas frecue
 ## Estructura del proyecto
 
 ```
-docker-compose.yml              MongoDB + mongo-express (UI admin en localhost:8081)
-.env.example                    Variables de entorno de ejemplo
-mongo/seed-faqs.js              Colecciones, índices y FAQs de ejemplo
-n8n/customer-service-chatbot.json   Workflow de n8n listo para importar
+docker-compose.yml                    MongoDB + mongo-express (UI admin en localhost:8081)
+.env.example                          Variables de entorno de ejemplo
+.mcp.json.example                     Plantilla de configuración del servidor MCP de n8n
+mongo/seed-faqs.js                    Colecciones, índices y FAQs de ejemplo
+n8n/customer-service-chatbot.json     Workflow original: matching por palabras clave (sin IA)
+n8n/chatbot-clinica-dental-ia.json    Workflow actual en producción: AI Agent (Gemini) + MongoDB como herramienta
 ```
+
+> **Nota:** `n8n/chatbot-clinica-dental-ia.json` es el workflow que corre actualmente. Usa un AI Agent (Google Gemini) que consulta la colección `faqs` en MongoDB como herramienta y responde de forma natural, en vez del matching por palabras clave del workflow original. Ambos archivos son exportaciones de referencia — al importar necesitas volver a configurar las credenciales (Telegram, MongoDB, Google Gemini) y, en el caso del segundo, el `chatId` del admin dentro del nodo "Notificar al admin".
 
 ## 1. Levantar MongoDB
 
