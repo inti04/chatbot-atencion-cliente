@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "n8n-mcp": {
+      "type": "http",
+      "url": "https://tu-instancia-n8n.example.com/mcp-server/http",
+      "headers": {
+        "Authorization": "Bearer TU_TOKEN_MCP_DE_N8N"
+      }
+    }
+  }
+}

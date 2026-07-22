@@ -1,0 +1,12 @@
+# Environment variables (contiene credenciales locales)
+.env
+
+# Configuración de servidores MCP (contiene tokens de acceso reales)
+.mcp.json
+
+# Configuración local/personal de Claude Code
+.claude/settings.local.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
